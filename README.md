@@ -1,3 +1,6 @@
+## Mindmap als Übersicht der kommenden Funktionen:
+![Mindmap](https://github.com/Cedric-CJ/demo/assets/120566759/887465ee-bbcc-4a1f-b619-9a01b62896ea)
+
 # Web-basiertes Such- und Analysetool
 
 Dieses Projekt implementiert ein web-basiertes Tool, das Benutzern ermöglicht, sowohl lokale Dateisysteme zu durchsuchen als auch Webseiten zu analysieren. Es bietet zwei Hauptfunktionen: die Suche nach Dateien in einem angegebenen Verzeichnis basierend auf einem Suchbegriff und die Analyse des Inhalts von Webseiten, um spezifische Informationen zu extrahieren.
