@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Suchtool</title>
+    <script>
+        // Funktion zum Umschalten zwischen den Suchmodi
+        function toggleSearchMode() {
+            var searchMode = document.getElementById("searchMode").value;
+            if (searchMode === "files") {
+                document.getElementById("fileSearch").style.display = "block";
+                document.getElementById("webSearch").style.display = "none";
+            } else if (searchMode === "web") {
+                document.getElementById("fileSearch").style.display = "none";
+                document.getElementById("webSearch").style.display = "block";
+            }
+        }
+
+function searchFiles() {
+    const path = document.getElementById('fileSearchInputPath').value;
+    const keyword = document.getElementById('fileSearchInputKeyword').value;
+
+    fetch(`/searchFiles?path=${encodeURIComponent(path)}&keyword=${encodeURIComponent(keyword)}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log(data); // Verarbeite die Suchergebnisse hier
+        })
+        .catch(error => console.error('Fehler bei der Suche', error));
+}
+
+
+        function searchWeb() {
+    const url = document.getElementById('webSearchInput').value;
+
+    fetch(`/searchWeb?url=${encodeURIComponent(url)}`)
+        .then(response => response.json())
+        .then(data => {
+            console.log(data); // Verarbeite die Suchergebnisse hier, z.B. durch Anzeigen auf der Webseite
+        })
+        .catch(error => console.error('Fehler bei der Websuche', error));
+}
+
+    </script>
+</head>
+<body>
+
+<h2>Suchtool</h2>
+
+<!-- Dropdown-Menü zum Auswählen des Suchmodus -->
+<select id="searchMode" onchange="toggleSearchMode()">
+    <option value="files">Dateien suchen</option>
+    <option value="web">Im Internet suchen</option>
+</select>
+
+<!-- Suchfelder für Dateien -->
+<div id="fileSearch" style="display: block;">
+    <input type="text" placeholder="Text oder Zahl eingeben" id="fileSearchInput">
+    <button onclick="searchFiles()">Suchen</button>
+    <!-- Hier könnten Ergebnisse und der Fortschrittsbalken angezeigt werden -->
+</div>
+
+<!-- Suchfeld für die Websuche -->
+<div id="webSearch" style="display: none;">
+    <input type="text" placeholder="HTTP-Link eingeben" id="webSearchInput">
+    <button onclick="searchWeb()">Suchen</button>
+    <!-- Hier könnten die Suchergebnisse angezeigt werden -->
+</div>
+
+</body>
+</html>
