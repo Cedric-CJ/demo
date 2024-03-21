@@ -16,30 +16,36 @@
             }
         }
 
-function searchFiles() {
-    const path = document.getElementById('fileSearchInputPath').value;
-    const keyword = document.getElementById('fileSearchInputKeyword').value;
+        function searchFiles() {
+            const keyword = document.getElementById('fileSearchInput').value;
 
-    fetch(`/searchFiles?path=${encodeURIComponent(path)}&keyword=${encodeURIComponent(keyword)}`)
-        .then(response => response.json())
-        .then(data => {
-            console.log(data); // Verarbeite die Suchergebnisse hier
-        })
-        .catch(error => console.error('Fehler bei der Suche', error));
-}
-
+            fetch(`/searchFolders?keyword=${encodeURIComponent(keyword)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data); // Verarbeite die Suchergebnisse hier
+                    // Beispiel zur Anzeige der Ergebnisse auf der Webseite:
+                    const resultsElement = document.getElementById('searchResults');
+                    resultsElement.innerHTML = ''; // Löscht frühere Suchergebnisse
+                    data.forEach(file => {
+                        const li = document.createElement('li');
+                        li.textContent = file;
+                        resultsElement.appendChild(li);
+                    });
+                })
+                .catch(error => console.error('Fehler bei der Suche', error));
+        }
 
         function searchWeb() {
-    const url = document.getElementById('webSearchInput').value;
+            const url = document.getElementById('webSearchInput').value;
 
-    fetch(`/searchWeb?url=${encodeURIComponent(url)}`)
-        .then(response => response.json())
-        .then(data => {
-            console.log(data); // Verarbeite die Suchergebnisse hier, z.B. durch Anzeigen auf der Webseite
-        })
-        .catch(error => console.error('Fehler bei der Websuche', error));
-}
-
+            fetch(`/searchWeb?url=${encodeURIComponent(url)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data); // Verarbeite die Suchergebnisse hier, z.B. durch Anzeigen auf der Webseite
+                    // Hier könnte ähnlich wie bei searchFiles() eine Logik zur Anzeige der Ergebnisse implementiert werden.
+                })
+                .catch(error => console.error('Fehler bei der Websuche', error));
+        }
     </script>
 </head>
 <body>
@@ -54,16 +60,16 @@ function searchFiles() {
 
 <!-- Suchfelder für Dateien -->
 <div id="fileSearch" style="display: block;">
-    <input type="text" placeholder="Text oder Zahl eingeben" id="fileSearchInput">
+    <input type="text" placeholder="Suchbegriff eingeben" id="fileSearchInput">
     <button onclick="searchFiles()">Suchen</button>
-    <!-- Hier könnten Ergebnisse und der Fortschrittsbalken angezeigt werden -->
+    <ul id="searchResults"></ul> <!-- Container für Suchergebnisse -->
 </div>
 
 <!-- Suchfeld für die Websuche -->
 <div id="webSearch" style="display: none;">
     <input type="text" placeholder="HTTP-Link eingeben" id="webSearchInput">
     <button onclick="searchWeb()">Suchen</button>
-    <!-- Hier könnten die Suchergebnisse angezeigt werden -->
+    <!-- Container für Suchergebnisse der Websuche könnte hier hinzugefügt werden -->
 </div>
 
 </body>
