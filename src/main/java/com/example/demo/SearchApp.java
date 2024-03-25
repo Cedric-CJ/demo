@@ -5,12 +5,16 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 public class SearchApp extends JFrame {
@@ -18,6 +22,7 @@ public class SearchApp extends JFrame {
     private JTextField inputField;
     private JTree fileTree;
     private JComboBox<String> searchType;
+    private JProgressBar progressBar;
 
     public SearchApp() {
         super("Lokale und Web-Suche");
@@ -32,14 +37,19 @@ public class SearchApp extends JFrame {
         JButton searchButton = new JButton("Suchen");
         searchType = new JComboBox<>(new String[]{"Dateien suchen", "Im Internet suchen"});
         fileTree = new JTree(new DefaultMutableTreeNode("Suchergebnisse"));
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true); // Zeigt den Fortschritt als Text an
         JScrollPane treeScroll = new JScrollPane(fileTree);
 
         JPanel panel = new JPanel();
         panel.add(searchType);
         panel.add(inputField);
         panel.add(searchButton);
+        panel.add(progressBar); // Füge die ProgressBar zum Panel hinzu
 
         searchButton.addActionListener(this::performSearch);
+
+        inputField.addActionListener(e -> performSearch(e)); // Füge einen ActionListener hinzu, der auf Enter reagiert
 
         add(panel, BorderLayout.NORTH);
         add(treeScroll, BorderLayout.CENTER);
@@ -48,22 +58,47 @@ public class SearchApp extends JFrame {
     private void performSearch(ActionEvent e) {
         String selection = (String) searchType.getSelectedItem();
         if ("Dateien suchen".equals(selection)) {
-            searchFiles();
+            disableUI(); // Deaktiviere UI-Elemente während der Suche
+            new Thread(this::searchFiles).start();
         } else if ("Im Internet suchen".equals(selection)) {
             // Implementiere die Websuche-Funktionalität hier
         }
     }
 
+    private void disableUI() {
+        inputField.setEnabled(false); // Deaktiviert das Eingabefeld
+        searchType.setEnabled(false); // Deaktiviert die Dropdown-Liste
+        // Füge hier weitere UI-Elemente hinzu, die deaktiviert werden sollen
+    }
+
+    private void enableUI() {
+        inputField.setEnabled(true); // Aktiviert das Eingabefeld
+        searchType.setEnabled(true); // Aktiviert die Dropdown-Liste
+        // Füge hier weitere UI-Elemente hinzu, die aktiviert werden sollen
+    }
+
     private void searchFiles() {
+        SwingUtilities.invokeLater(() -> progressBar.setValue(0)); // Setze den Fortschrittsbalken zurück
+
         String searchKeyword = inputField.getText().toLowerCase();
         Path startPath = Paths.get("Z:\\Serien_und_Filme");
         DefaultMutableTreeNode root = new DefaultMutableTreeNode(startPath.toString());
         Map<String, Integer> fileCountMap = new HashMap<>();
+        AtomicInteger totalFiles = new AtomicInteger();
 
         try {
+            // Zähle zuerst die Gesamtanzahl der Dateien
+            Files.walk(startPath).forEach(p -> totalFiles.incrementAndGet());
+
             Files.walkFileTree(startPath, new SimpleFileVisitor<Path>() {
+                private int visitedFiles = 0;
+
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    visitedFiles++;
+                    int progress = (int) (((double) visitedFiles / totalFiles.get()) * 100);
+                    SwingUtilities.invokeLater(() -> progressBar.setValue(progress));
+
                     if (file.toString().toLowerCase().contains(searchKeyword)) {
                         Path relativePath = startPath.relativize(file.getParent());
                         String key = relativePath.toString();
@@ -77,8 +112,12 @@ public class SearchApp extends JFrame {
             ex.printStackTrace();
         }
 
-        fileTree.setModel(new DefaultTreeModel(root));
-        expandAllNodes(fileTree, 0, fileTree.getRowCount());
+        SwingUtilities.invokeLater(() -> {
+            fileTree.setModel(new DefaultTreeModel(root));
+            expandAllNodes(fileTree, 0, fileTree.getRowCount());
+            progressBar.setValue(100); // Setze den Fortschrittsbalken auf 100%, wenn die Suche abgeschlossen ist
+            enableUI(); // Aktiviere UI-Elemente nach der Suche
+        });
     }
 
     private void addNode(DefaultMutableTreeNode parent, String pathString, Map<String, Integer> fileCountMap) {
