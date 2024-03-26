@@ -5,16 +5,15 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.*;
 import java.util.List;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.nio.charset.StandardCharsets;
+
 
 
 public class SearchApp extends JFrame {
@@ -26,20 +25,37 @@ public class SearchApp extends JFrame {
     private JButton toggleModeButton;
     private JPanel panel;
     private JButton searchButton; // Stellen Sie sicher, dass searchButton auf Klassenebene definiert ist, falls noch nicht geschehen.
-
-
     private boolean isDarkMode = false; // Zustand des Dark Modes
-
+    private JPanel bottomPanel; // Klassenvariable für das untere Panel
 
     public SearchApp() {
         super("Lokale und Web-Suche");
         initComponents();
         setSize(850, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout()); // Setzen des Layouts für das JFrame
+        add(panel, BorderLayout.NORTH); // Fügt das Panel mit Suchfeldern und Buttons oben hinzu
+        add(new JScrollPane(fileTree), BorderLayout.CENTER); // Fügt den JScrollPane in der Mitte hinzu
+        addBottomPanel(); // Methode zum Hinzufügen des unteren Panels
+        applyMode();
         setVisible(true);
     }
 
+    private void addBottomPanel() {
+        bottomPanel = new JPanel(); // Initialisierung mit der Klassenvariable
+        bottomPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+
+        JButton checkNewFilesButton = new JButton("Überprüfen auf neue Dateien");
+        checkNewFilesButton.addActionListener(e -> {
+            showLoadingOverlay();
+        });
+
+        bottomPanel.add(checkNewFilesButton);
+        add(bottomPanel, BorderLayout.SOUTH);
+    }
+
     private void initComponents() {
+        panel = new JPanel();
         inputField = new JTextField(30);
         searchButton = new JButton("Suchen");
         searchType = new JComboBox<>(new String[]{"Dateien suchen", "Im Internet suchen"});
@@ -48,7 +64,6 @@ public class SearchApp extends JFrame {
         progressBar.setStringPainted(true);
         JScrollPane treeScroll = new JScrollPane(fileTree);
         toggleModeButton = new JButton("Dark Mode");
-        panel = new JPanel();
 
         panel.add(searchType);
         panel.add(inputField);
@@ -75,11 +90,52 @@ public class SearchApp extends JFrame {
         if (isDarkMode) {
             setUIColors(new Color(43, 43, 43), Color.LIGHT_GRAY, Color.GREEN, new Color(60, 63, 65), Color.LIGHT_GRAY);
             toggleModeButton.setText("Light Mode");
+            if (bottomPanel != null) {
+                bottomPanel.setBackground(new Color(43, 43, 43)); // Hintergrundfarbe des unteren Panels
+                for (Component comp : bottomPanel.getComponents()) {
+                    if (comp instanceof JButton) {
+                        comp.setForeground(Color.LIGHT_GRAY); // Textfarbe der Buttons
+                        comp.setBackground(new Color(60, 63, 65)); // Hintergrundfarbe der Buttons
+                    }
+                }
+            }
         } else {
             setUIColors(Color.WHITE, Color.BLACK, Color.BLUE, Color.WHITE, Color.BLACK);
             toggleModeButton.setText("Dark Mode");
+            if (bottomPanel != null) {
+                bottomPanel.setBackground(Color.WHITE); // Hintergrundfarbe des unteren Panels für Light Mode
+                for (Component comp : bottomPanel.getComponents()) {
+                    if (comp instanceof JButton) {
+                        comp.setForeground(Color.BLACK); // Textfarbe der Buttons für Light Mode
+                        comp.setBackground(Color.WHITE); // Hintergrundfarbe der Buttons für Light Mode
+                    }
+                }
+            }
         }
         SwingUtilities.updateComponentTreeUI(this);
+    }
+
+    private void addFilesToTree(DefaultMutableTreeNode root, Set<String> files, boolean deleted) {
+        Map<String, DefaultMutableTreeNode> pathNodes = new HashMap<>();
+        for (String filePath : files) {
+            Path path = Paths.get(filePath);
+            DefaultMutableTreeNode node = root;
+
+            // Durchlaufe den Pfad und erstelle bei Bedarf Knoten
+            for (int i = 0; i < path.getNameCount(); i++) {
+                String part = path.getName(i).toString();
+                if (i == path.getNameCount() - 1 && deleted) {
+                    part += " (gelöscht)"; // Markiere die Datei als gelöscht, falls zutreffend
+                }
+                DefaultMutableTreeNode childNode = pathNodes.get(part);
+                if (childNode == null) {
+                    childNode = new DefaultMutableTreeNode(part);
+                    node.add(childNode);
+                    pathNodes.put(part, childNode);
+                }
+                node = childNode;
+            }
+        }
     }
 
     private void setUIColors(Color background, Color foreground, Color progressForeground, Color inputBackground, Color inputForeground) {
@@ -198,7 +254,7 @@ public class SearchApp extends JFrame {
         }
     }
 
-    private void searchFiles() {
+    private Map<Path, List<Path>> searchFiles() {
         SwingUtilities.invokeLater(() -> progressBar.setValue(0));
 
         String searchKeyword = inputField.getText().toLowerCase();
@@ -236,6 +292,8 @@ public class SearchApp extends JFrame {
             progressBar.setValue(100);
             enableUI();
         });
+        saveSearchResults(filesMap);
+        return filesMap;
     }
 
     private DefaultMutableTreeNode findOrCreateNode(DefaultMutableTreeNode root, Path path) {
@@ -267,6 +325,82 @@ public class SearchApp extends JFrame {
         if (tree.getRowCount() != rowCount) {
             expandAllNodes(tree, rowCount, tree.getRowCount());
         }
+    }
+
+    private void saveSearchResults(Map<Path, List<Path>> filesMap) {
+        try (PrintWriter writer = new PrintWriter("last_search_results.txt", StandardCharsets.UTF_8)) {
+            for (Map.Entry<Path, List<Path>> entry : filesMap.entrySet()) {
+                Path parentPath = entry.getKey();
+                List<Path> files = entry.getValue();
+                for (Path file : files) {
+                    writer.println(parentPath.resolve(file).toString());
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private List<String> readLastSearchResults() {
+        try {
+            return Files.readAllLines(Paths.get("last_search_results.txt"), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return new ArrayList<>();
+        }
+    }
+
+    private void performNewFilesCheck() {
+        Set<String> lastSearchResults = new HashSet<>(readLastSearchResults());
+        Map<Path, List<Path>> currentSearchMap = searchFiles();
+        Set<String> currentPaths = currentSearchMap.entrySet().stream()
+                .flatMap(entry -> entry.getValue().stream().map(path -> entry.getKey().resolve(path).toString()))
+                .collect(Collectors.toSet());
+
+        Set<String> newFiles = new HashSet<>(currentPaths);
+        newFiles.removeAll(lastSearchResults);
+
+        Set<String> deletedFiles = new HashSet<>(lastSearchResults);
+        deletedFiles.removeAll(currentPaths);
+
+        DefaultMutableTreeNode root = new DefaultMutableTreeNode("Suchergebnisse");
+
+        // Nutze die neue Methode, um Dateien zum Baum hinzuzufügen
+        if (!newFiles.isEmpty() || !deletedFiles.isEmpty()) {
+            addFilesToTree(root, newFiles, false); // Füge neue Dateien hinzu
+            addFilesToTree(root, deletedFiles, true); // Füge gelöschte Dateien hinzu
+        } else {
+            root.add(new DefaultMutableTreeNode("Keine neuen Dateien gefunden."));
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            fileTree.setModel(new DefaultTreeModel(root));
+            expandAllNodes(fileTree, 0, fileTree.getRowCount());
+        });
+
+        saveSearchResults(currentSearchMap);
+    }
+
+    private void showLoadingOverlay() {
+        JDialog loadingDialog = new JDialog(this, "Überprüfung läuft...", Dialog.ModalityType.APPLICATION_MODAL);
+        loadingDialog.setLayout(new BorderLayout());
+        JLabel messageLabel = new JLabel("Bitte warten...", JLabel.CENTER);
+        JProgressBar progressBar = new JProgressBar();
+        progressBar.setIndeterminate(true);
+
+        loadingDialog.add(messageLabel, BorderLayout.CENTER);
+        loadingDialog.add(progressBar, BorderLayout.SOUTH);
+        loadingDialog.setSize(300, 100);
+        loadingDialog.setLocationRelativeTo(this);
+        loadingDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE); // Verhindert das Schließen durch den Benutzer
+
+        // Zeige den Dialog in einem separaten Thread an, um die UI reaktionsfähig zu halten
+        SwingUtilities.invokeLater(() -> loadingDialog.setVisible(true));
+
+        // Führe die Überprüfung auf neue Dateien in einem separaten Thread aus
+        new Thread(() -> {
+            performNewFilesCheck();
+            loadingDialog.dispose(); // Schließe den Dialog, sobald die Überprüfung abgeschlossen ist
+        }).start();
     }
 
     public static void main(String[] args) {
