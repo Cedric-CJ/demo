@@ -5,6 +5,9 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.*;
@@ -79,6 +82,34 @@ public class SearchApp extends JFrame {
         add(panel, BorderLayout.NORTH);
         add(treeScroll, BorderLayout.CENTER);
         applyMode();
+        fileTree.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    DefaultMutableTreeNode node = (DefaultMutableTreeNode) fileTree.getLastSelectedPathComponent();
+                    if (node == null || node.isRoot()) return;
+
+                    Object nodeInfo = node.getUserObject();
+                    if (nodeInfo instanceof FileInfo) {
+                        FileInfo fileInfo = (FileInfo) nodeInfo;
+                        openFile(fileInfo.getFullPath().toString()); // Öffnen der Datei basierend auf dem Pfad
+                    }
+                }
+            }
+        });
+    }
+
+    public void openFile(String filePath) {
+        try {
+            File fileToOpen = new File(filePath);
+            if (fileToOpen.exists()) {
+                Desktop.getDesktop().open(fileToOpen);
+            } else {
+                JOptionPane.showMessageDialog(this, "Datei existiert nicht: " + filePath, "Fehler", JOptionPane.ERROR_MESSAGE);
+            }
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "Fehler beim Öffnen der Datei: " + filePath, "Fehler", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void toggleMode() {
@@ -114,9 +145,31 @@ public class SearchApp extends JFrame {
         }
         SwingUtilities.updateComponentTreeUI(this);
     }
+    public class FileInfo implements Comparable<FileInfo> {
+        private String displayName;
+        private Path fullPath;
+
+        public FileInfo(String displayName, Path fullPath) {
+            this.displayName = displayName;
+            this.fullPath = fullPath;
+        }
+
+        public Path getFullPath() {
+            return fullPath;
+        }
+
+        @Override
+        public String toString() {
+            return displayName;
+        }
+        @Override
+        public int compareTo(FileInfo o) {
+            return this.displayName.compareTo(o.displayName);
+        }
+    }
 
     private void addFilesToTree(DefaultMutableTreeNode root, Set<String> files, boolean deleted) {
-        Map<String, DefaultMutableTreeNode> pathNodes = new HashMap<>();
+        Map<String, DefaultMutableTreeNode> pathNodes = new TreeMap<>(); // Nutze TreeMap für sortierte Pfade
         for (String filePath : files) {
             Path path = Paths.get(filePath);
             DefaultMutableTreeNode node = root;
@@ -127,11 +180,13 @@ public class SearchApp extends JFrame {
                 if (i == path.getNameCount() - 1 && deleted) {
                     part += " (gelöscht)"; // Markiere die Datei als gelöscht, falls zutreffend
                 }
+                if (!pathNodes.containsKey(part)) {
+                    pathNodes.put(part, new DefaultMutableTreeNode(part));
+                }
                 DefaultMutableTreeNode childNode = pathNodes.get(part);
-                if (childNode == null) {
-                    childNode = new DefaultMutableTreeNode(part);
+                // Füge den Knoten nur hinzu, wenn er noch nicht Teil des aktuellen Knotens ist
+                if (node.getIndex(childNode) == -1) {
                     node.add(childNode);
-                    pathNodes.put(part, childNode);
                 }
                 node = childNode;
             }
@@ -259,27 +314,29 @@ public class SearchApp extends JFrame {
 
         String searchKeyword = inputField.getText().toLowerCase();
         Path startPath = Paths.get("Z:\\Serien_und_Filme");
-        DefaultMutableTreeNode root = new DefaultMutableTreeNode(startPath.toString());
+        DefaultMutableTreeNode root = new DefaultMutableTreeNode("Suchergebnisse"); // Verwende einen allgemeineren Wurzelknoten
 
-        Map<Path, List<Path>> filesMap = new HashMap<>();
+        Map<Path, List<Path>> filesMap = new TreeMap<>(); // Verwende TreeMap für automatische Sortierung der Pfade
 
         try {
-            Files.walkFileTree(startPath, new SimpleFileVisitor<Path>() {
+            Files.walkFileTree(startPath, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE, new SimpleFileVisitor<Path>() {
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     if (file.toString().toLowerCase().contains(searchKeyword)) {
                         Path parent = startPath.relativize(file.getParent());
-                        filesMap.computeIfAbsent(parent, k -> new ArrayList<>()).add(file.getFileName());
+                        filesMap.computeIfAbsent(parent, k -> new ArrayList<>()).add(file);
                     }
                     return FileVisitResult.CONTINUE;
                 }
             });
 
             filesMap.forEach((parentPath, files) -> {
+                files.sort(Comparator.comparing(Path::getFileName)); // Sortiere die Dateien alphabetisch nach Namen
+
                 DefaultMutableTreeNode parentNode = findOrCreateNode(root, parentPath);
-                files.forEach(file -> parentNode.add(new DefaultMutableTreeNode(file.toString())));
+                files.forEach(file -> parentNode.add(new DefaultMutableTreeNode(file.getFileName().toString())));
                 if (!files.isEmpty()) {
-                    parentNode.setUserObject(parentNode.getUserObject().toString() + " (" + files.size() + ")");
+                    parentNode.setUserObject(parentPath + " (" + files.size() + ")");
                 }
             });
         } catch (IOException ex) {
@@ -364,10 +421,9 @@ public class SearchApp extends JFrame {
 
         DefaultMutableTreeNode root = new DefaultMutableTreeNode("Suchergebnisse");
 
-        // Nutze die neue Methode, um Dateien zum Baum hinzuzufügen
         if (!newFiles.isEmpty() || !deletedFiles.isEmpty()) {
-            addFilesToTree(root, newFiles, false); // Füge neue Dateien hinzu
-            addFilesToTree(root, deletedFiles, true); // Füge gelöschte Dateien hinzu
+            addFilesToTree(root, newFiles, false);
+            addFilesToTree(root, deletedFiles, true);
         } else {
             root.add(new DefaultMutableTreeNode("Keine neuen Dateien gefunden."));
         }
