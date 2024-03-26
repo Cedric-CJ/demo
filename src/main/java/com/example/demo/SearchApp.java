@@ -5,17 +5,17 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
 
 public class SearchApp extends JFrame {
 
@@ -25,6 +25,8 @@ public class SearchApp extends JFrame {
     private JProgressBar progressBar;
     private JButton toggleModeButton;
     private JPanel panel;
+    private JButton searchButton; // Stellen Sie sicher, dass searchButton auf Klassenebene definiert ist, falls noch nicht geschehen.
+
 
     private boolean isDarkMode = false; // Zustand des Dark Modes
 
@@ -32,14 +34,14 @@ public class SearchApp extends JFrame {
     public SearchApp() {
         super("Lokale und Web-Suche");
         initComponents();
-        setSize(800, 600);
+        setSize(850, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setVisible(true);
     }
 
     private void initComponents() {
         inputField = new JTextField(30);
-        JButton searchButton = new JButton("Suchen");
+        searchButton = new JButton("Suchen");
         searchType = new JComboBox<>(new String[]{"Dateien suchen", "Im Internet suchen"});
         fileTree = new JTree(new DefaultMutableTreeNode("Suchergebnisse"));
         progressBar = new JProgressBar(0, 100);
@@ -166,8 +168,6 @@ public class SearchApp extends JFrame {
         }
     }
 
-    private JButton searchButton; // Stellen Sie sicher, dass searchButton auf Klassenebene definiert ist, falls noch nicht geschehen.
-
     private void disableUI() {
         inputField.setEnabled(false);
         searchType.setVisible(false); // Versteckt die JComboBox während der Suche
@@ -199,34 +199,31 @@ public class SearchApp extends JFrame {
     }
 
     private void searchFiles() {
-        SwingUtilities.invokeLater(() -> progressBar.setValue(0)); // Setze den Fortschrittsbalken zurück
+        SwingUtilities.invokeLater(() -> progressBar.setValue(0));
 
         String searchKeyword = inputField.getText().toLowerCase();
         Path startPath = Paths.get("Z:\\Serien_und_Filme");
         DefaultMutableTreeNode root = new DefaultMutableTreeNode(startPath.toString());
-        Map<String, Integer> fileCountMap = new HashMap<>();
-        AtomicInteger totalFiles = new AtomicInteger();
+
+        Map<Path, List<Path>> filesMap = new HashMap<>();
 
         try {
-            // Zähle zuerst die Gesamtanzahl der Dateien
-            Files.walk(startPath).forEach(p -> totalFiles.incrementAndGet());
-
             Files.walkFileTree(startPath, new SimpleFileVisitor<Path>() {
-                private int visitedFiles = 0;
-
                 @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    visitedFiles++;
-                    int progress = (int) (((double) visitedFiles / totalFiles.get()) * 100);
-                    SwingUtilities.invokeLater(() -> progressBar.setValue(progress));
-
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     if (file.toString().toLowerCase().contains(searchKeyword)) {
-                        Path relativePath = startPath.relativize(file.getParent());
-                        String key = relativePath.toString();
-                        fileCountMap.put(key, fileCountMap.getOrDefault(key, 0) + 1);
-                        addNode(root, relativePath.resolve(file.getFileName()).toString(), fileCountMap);
+                        Path parent = startPath.relativize(file.getParent());
+                        filesMap.computeIfAbsent(parent, k -> new ArrayList<>()).add(file.getFileName());
                     }
                     return FileVisitResult.CONTINUE;
+                }
+            });
+
+            filesMap.forEach((parentPath, files) -> {
+                DefaultMutableTreeNode parentNode = findOrCreateNode(root, parentPath);
+                files.forEach(file -> parentNode.add(new DefaultMutableTreeNode(file.toString())));
+                if (!files.isEmpty()) {
+                    parentNode.setUserObject(parentNode.getUserObject().toString() + " (" + files.size() + ")");
                 }
             });
         } catch (IOException ex) {
@@ -236,55 +233,30 @@ public class SearchApp extends JFrame {
         SwingUtilities.invokeLater(() -> {
             fileTree.setModel(new DefaultTreeModel(root));
             expandAllNodes(fileTree, 0, fileTree.getRowCount());
-            progressBar.setValue(100); // Setze den Fortschrittsbalken auf 100%, wenn die Suche abgeschlossen ist
-            enableUI(); // Aktiviere UI-Elemente nach der Suche
+            progressBar.setValue(100);
+            enableUI();
         });
     }
 
-    private void addNode(DefaultMutableTreeNode parent, String pathString, Map<String, Integer> fileCountMap) {
-        String[] parts = pathString.split(Pattern.quote(File.separator)); // Korrigiert für Plattformunabhängigkeit
-        DefaultMutableTreeNode node = parent;
-
-        StringBuilder pathBuilder = new StringBuilder();
-
-        for (String part : parts) {
-            pathBuilder.append(part);
-            String path = pathBuilder.toString();
-
-            DefaultMutableTreeNode child = getChild(node, part);
-            if (child == null) {
-                child = new DefaultMutableTreeNode(part);
-                node.add(child);
+    private DefaultMutableTreeNode findOrCreateNode(DefaultMutableTreeNode root, Path path) {
+        DefaultMutableTreeNode node = root;
+        for (Path part : path) {
+            boolean found = false;
+            for (int i = 0; i < node.getChildCount(); i++) {
+                DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
+                if (child.getUserObject().toString().equals(part.toString())) {
+                    node = child;
+                    found = true;
+                    break;
+                }
             }
-            node = child;
-
-            // Aktualisiere die Anzeige der Dateianzahl nur an Ordnerknoten
-            if (Files.isDirectory(Paths.get(path))) {
-                updateNodeWithFileCount(node, fileCountMap.getOrDefault(path, 0));
-            }
-
-            pathBuilder.append(File.separator);
-        }
-    }
-
-    private void updateNodeWithFileCount(DefaultMutableTreeNode node, int fileCount) {
-        if (fileCount > 0) {
-            String nodeName = node.getUserObject().toString();
-            // Entferne alte Dateizahl, wenn vorhanden
-            nodeName = nodeName.replaceFirst("\\s\\(\\d+\\)$", "");
-            // Füge neue Dateizahl hinzu
-            node.setUserObject(nodeName + " (" + fileCount + ")");
-        }
-    }
-
-    private DefaultMutableTreeNode getChild(DefaultMutableTreeNode parent, String childName) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            DefaultMutableTreeNode child = (DefaultMutableTreeNode) parent.getChildAt(i);
-            if (childName.equals(child.getUserObject().toString())) {
-                return child;
+            if (!found) {
+                DefaultMutableTreeNode newNode = new DefaultMutableTreeNode(part.toString());
+                node.add(newNode);
+                node = newNode;
             }
         }
-        return null;
+        return node;
     }
 
     private void expandAllNodes(JTree tree, int startingIndex, int rowCount) {
